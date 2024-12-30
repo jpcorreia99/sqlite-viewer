@@ -1,5 +1,6 @@
 import sys
 from app.pages import Page
+from app.reading import page_start
 # import sqlparse - available if you need it!
 
 database_file_path = sys.argv[1]
@@ -29,14 +30,29 @@ with open(database_file_path, "rb") as database_file:
     database_file.seek(0, 0)
     first_page_bytes = bytearray(database_file.read(page_size))
     first_page = Page.from_bytes(first_page_bytes, is_first_page=True)
-
+    database_file.seek(0)
     if command == ".dbinfo":
         print(f"database page size: {page_size}")
         print(f"number of tables:  {first_page.cell_count}")
     elif command == ".tables":
-        # The first page in an sqlite db is a special node that contains
-        database_file.seek(0)
+        # The first page in an sqlite db is a special node that contains the schema of the db
         sqlite_schema = first_page.read_sqlite_schema(database_file)
         print(f"table names: {' '.join([schema.name for schema in sqlite_schema])}")
-    else:
-        print(f"Invalid command {command}")
+    else:  # for now assume it's a select count query
+        query_args = command.split(" ")
+        table_name = query_args[-1]
+        sqlite_schema = first_page.read_sqlite_schema(database_file)
+
+        desired_table_schema = next(
+            (schema for schema in sqlite_schema if schema.name == table_name), None
+        )
+
+        # IMPORTANT, page count is 1-indexed, meaning the first page is represented as rootpage "1"
+        desired_table_rootpage = desired_table_schema.rootpage - 1
+
+        desired_table_location = page_start(desired_table_rootpage, page_size)
+        database_file.seek(desired_table_location)
+        page_bytes = bytearray(database_file.read(page_size))
+        table_page = Page.from_bytes(page_bytes)
+
+        print(table_page.cell_count)

@@ -78,7 +78,7 @@ class Page:
 
             _header_size = read_varint(database_file)
             _rowid = read_varint(database_file)
-            record = read_record(database_file, 5)  # the number of columns is known
+            record = read_record(database_file)  # the number of columns is known
             schema = Schema(
                 table_type=record[0].decode("utf-8"),
                 table_name=record[1].decode("utf-8"),

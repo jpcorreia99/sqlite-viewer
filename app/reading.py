@@ -1,14 +1,15 @@
-from app.consts import DB_FILE_HEADER_SIZE, IS_FIRST_BIT_ZERO_MASK, LAST_SEVEN_BITS_MASK
-from typing import BinaryIO
+from app.consts import IS_FIRST_BIT_ZERO_MASK, LAST_SEVEN_BITS_MASK
+from typing import BinaryIO, Tuple, List
 
 
 def page_start(page_index, page_size):
-    return DB_FILE_HEADER_SIZE + page_index * page_size
+    return page_index * page_size
 
 
-def read_varint(stream: BinaryIO) -> int:
+def read_varint(stream: BinaryIO) -> Tuple[int, int]:
     # https://www.sqlite.org/fileformat.html#varint
 
+    byte_count = 1
     byte = stream.read(1)[0]
     # Extract the 7 least s ignificant bits
     value = byte & LAST_SEVEN_BITS_MASK
@@ -19,14 +20,23 @@ def read_varint(stream: BinaryIO) -> int:
         byte = stream.read(1)[0]
         value |= (byte & 0x7F) << shift
         shift += 7
+        byte_count += 1
 
-    return value
+    return value, byte_count
 
 
-def read_record(stream: BinaryIO, column_count: int):
-    _number_of_bytes_in_header = read_varint(stream)
+def read_record(stream: BinaryIO) -> List[any]:
+    # Reference record format in https://saveriomiroddi.github.io/SQLIte-database-file-format-diagrams/
+    header_size, num_header_bytes = read_varint(stream)
 
-    serial_types = [read_varint(stream) for i in range(column_count)]
+    i = num_header_bytes
+    # read all the other bytes past the bytes used to declare the header size
+    serial_types = []
+    while i < header_size:
+        serial_type, bytes_used = read_varint(stream)
+        i += bytes_used
+        serial_types.append(serial_type)
+
     return [read_column_value(stream, serial_type) for serial_type in serial_types]
 
 
