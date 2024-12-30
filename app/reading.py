@@ -2,10 +2,6 @@ from app.consts import IS_FIRST_BIT_ZERO_MASK, LAST_SEVEN_BITS_MASK
 from typing import BinaryIO, Tuple, List
 
 
-def page_start(page_index, page_size):
-    return page_index * page_size
-
-
 def read_varint(stream: BinaryIO) -> Tuple[int, int]:
     # https://www.sqlite.org/fileformat.html#varint
 

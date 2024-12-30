@@ -1,3 +1,5 @@
+#  pipenv install to setup the repo
+
 [![progress-banner](https://backend.codecrafters.io/progress/sqlite/daa83443-036c-4926-9f5c-0cbeefcf0fc9)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
 This is a starting point for Python solutions to the

@@ -1,7 +1,6 @@
 import sys
 from app.pages import Page
-from app.reading import page_start
-# import sqlparse - available if you need it!
+from app.queries import handle_sql_query
 
 database_file_path = sys.argv[1]
 command = sys.argv[2]
@@ -39,20 +38,4 @@ with open(database_file_path, "rb") as database_file:
         sqlite_schema = first_page.read_sqlite_schema(database_file)
         print(f"table names: {' '.join([schema.name for schema in sqlite_schema])}")
     else:  # for now assume it's a select count query
-        query_args = command.split(" ")
-        table_name = query_args[-1]
-        sqlite_schema = first_page.read_sqlite_schema(database_file)
-
-        desired_table_schema = next(
-            (schema for schema in sqlite_schema if schema.name == table_name), None
-        )
-
-        # IMPORTANT, page count is 1-indexed, meaning the first page is represented as rootpage "1"
-        desired_table_rootpage = desired_table_schema.rootpage - 1
-
-        desired_table_location = page_start(desired_table_rootpage, page_size)
-        database_file.seek(desired_table_location)
-        page_bytes = bytearray(database_file.read(page_size))
-        table_page = Page.from_bytes(page_bytes)
-
-        print(table_page.cell_count)
+        handle_sql_query(command, database_file, first_page, page_size)
