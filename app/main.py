@@ -28,7 +28,7 @@ with open(database_file_path, "rb") as database_file:
     # we will read the first full page, seek back to the start of the file
     database_file.seek(0, 0)
     first_page_bytes = bytearray(database_file.read(page_size))
-    first_page = Page.from_bytes(first_page_bytes, is_first_page=True)
+    first_page = Page.from_bytes(first_page_bytes, 0, is_first_page=True)
     database_file.seek(0)
     if command == ".dbinfo":
         print(f"database page size: {page_size}")

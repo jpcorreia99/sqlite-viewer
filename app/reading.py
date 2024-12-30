@@ -42,5 +42,7 @@ def read_column_value(stream, serial_type):
         return stream.read(n_bytes)
     elif serial_type == 1:
         return int.from_bytes(stream.read(1), "big")
+    elif serial_type == 0:
+        return None
     else:
         raise Exception(f"Unknown serial_type {serial_type}")

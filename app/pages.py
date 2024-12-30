@@ -10,7 +10,7 @@ from app.consts import (
 from app.reading import read_varint, read_record
 from app.rows import Schema
 
-from typing import List, BinaryIO
+from typing import List, BinaryIO, Dict
 
 
 class PageType(Enum):
@@ -23,7 +23,7 @@ class PageType(Enum):
 # representation of the page (header + cells) declared in
 # https://www.sqlite.org/fileformat.html#b_tree_pages
 class Page:
-    bytes_content: bytearray
+    start: int
     page_type: PageType
     cell_count: int
     cell_area_start: int
@@ -37,9 +37,11 @@ class Page:
         ]
 
     @staticmethod
-    def from_bytes(bytes_content: bytearray, is_first_page: bool = False) -> Page:
+    def from_bytes(
+        bytes_content: bytearray, start: int, is_first_page: bool = False
+    ) -> Page:
         instance = Page()
-        instance.bytes_content = bytes_content
+        instance.start = start
 
         if is_first_page:
             bytes_content = bytes_content[DB_FILE_HEADER_SIZE:]
@@ -93,3 +95,35 @@ class Page:
             schema_records.append(schema)
 
         return schema_records
+
+    # given a list of column names, reads the rows and returns the values as dicts
+    def read_records_with_schema(
+        self, database_file: BinaryIO, schema: List[str]
+    ) -> List[Dict[str, any]]:
+        records = self.__read_records(database_file)
+
+        res = []
+        for record in records:
+            if len(record) != len(schema):
+                raise TypeError(
+                    "Len of record does not match len of provided schema",
+                    len(read_record),
+                    len(schema),
+                )
+            res.append({key: value for (key, value) in zip(schema, record)})
+
+        return res
+
+    def __read_records(self, database_file: BinaryIO) -> List[List[any]]:
+        records = []
+        for cell_pointer in self.cell_pointer_array:
+            database_file.seek(self.start + cell_pointer)
+
+            # See https://saveriomiroddi.github.io/SQLIte-database-file-format-diagrams/ for why the reads are done
+            _header_size = read_varint(database_file)
+            _rowid = read_varint(database_file)
+
+            record = read_record(database_file)
+            records.append(record)
+
+        return records
