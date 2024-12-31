@@ -1,6 +1,6 @@
 import sys
 from app.pages import Page
-from app.queries import handle_sql_query
+from app.queries import Query
 
 database_file_path = sys.argv[1]
 command = sys.argv[2]
@@ -38,4 +38,5 @@ with open(database_file_path, "rb") as database_file:
         sqlite_schema = first_page.read_sqlite_schema(database_file)
         print(f"table names: {' '.join([schema.name for schema in sqlite_schema])}")
     else:  # for now assume it's a select count query
-        handle_sql_query(command, database_file, first_page, page_size)
+        query = Query.parse_query(command)
+        query.execute(database_file, first_page, page_size)
