@@ -1,5 +1,6 @@
 import sqlparse
 from sqlparse.sql import IdentifierList, Identifier, Statement, Parenthesis
+from sqlparse.tokens import Keyword, Wildcard
 from app.pages import Page
 from typing import List
 
@@ -15,9 +16,9 @@ def handle_sql_query(query, database_file, first_page, page_size):
     if query_args[1].lower() == "count(*)":
         print_table_count(database_file, sqlite_schema, table_name, page_size)
     else:
-        column_name = query_args[1]
+        column_names = extract_columns_names_from_query(query)
         print_column_contents(
-            database_file, sqlite_schema, table_name, column_name, page_size
+            database_file, sqlite_schema, table_name, column_names, page_size
         )
 
 
@@ -27,7 +28,7 @@ def print_table_count(database_file, sqlite_schema, table_name, page_size):
 
 
 def print_column_contents(
-    database_file, sqlite_schema, table_name, column_name, page_size
+    database_file, sqlite_schema, table_name, requested_column_names, page_size
 ):
     desired_table_schema = next(
         (schema for schema in sqlite_schema if schema.name == table_name), None
@@ -36,11 +37,18 @@ def print_column_contents(
     creation_query = desired_table_schema.sql.split(b"\r")[0]
     parsed_creation_query = sqlparse.parse(creation_query.decode("utf-8"))[0]
 
-    column_names = get_column_names(parsed_creation_query)
+    schema = get_column_names_from_creation_query(parsed_creation_query)
     table_page = get_table_page(database_file, sqlite_schema, table_name, page_size)
-    rows = table_page.read_records_with_schema(database_file, column_names)
+    rows = table_page.read_records_with_schema(database_file, schema)
 
-    print("\n".join([row[column_name].decode("utf8") for row in rows]))
+    column_values_per_row = [
+        [row[column_name].decode("utf8") for column_name in requested_column_names]
+        for row in rows
+    ]
+
+    print(
+        "\n".join(["|".join([entry for entry in row]) for row in column_values_per_row])
+    )
 
 
 def get_table_page(database_file, sqlite_schema, table_name, page_size) -> Page:
@@ -58,7 +66,7 @@ def get_table_page(database_file, sqlite_schema, table_name, page_size) -> Page:
     return Page.from_bytes(page_bytes, desired_table_location)
 
 
-def get_column_names(parsed_creation_query: Statement) -> List[str]:
+def get_column_names_from_creation_query(parsed_creation_query: Statement) -> List[str]:
     """
     Creation query will look like
 
@@ -90,6 +98,24 @@ def get_column_names(parsed_creation_query: Statement) -> List[str]:
                                 raise TypeError("The token that failed is", identifier)
 
             break  # no need to iterate more
+
+    return column_names
+
+
+def extract_columns_names_from_query(query):
+    statement = sqlparse.parse(query)[0]
+
+    column_names = []
+
+    for token in statement.tokens:
+        if isinstance(token, IdentifierList):
+            for identifier in token.get_identifiers():
+                if identifier.ttype is not Wildcard:
+                    column_names.append(identifier.get_real_name())
+        elif isinstance(token, Identifier):
+            column_names.append(token.get_real_name())
+        elif token.ttype is Keyword and token.value.upper() == "FROM":
+            break
 
     return column_names
 
