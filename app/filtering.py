@@ -17,7 +17,11 @@ class ValueFilter:
                 f"Expected column '{self.column}' in row but only found {row.keys}"
             )
 
-        value = row[self.column].decode("utf8")
+        value = row[self.column]
+        if not value:
+            return False
+
+        value = value.decode("utf8")
         if type(value) is not type(self.threshold):
             raise TypeError(
                 "Type of given value is not the same as threshold: ",

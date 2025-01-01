@@ -2,26 +2,29 @@ from app.consts import IS_FIRST_BIT_ZERO_MASK, LAST_SEVEN_BITS_MASK
 from typing import BinaryIO, Tuple, List
 
 
+def page_start(page_index, page_size):
+    return page_index * page_size
+
+
 def read_varint(stream: BinaryIO) -> Tuple[int, int]:
     # https://www.sqlite.org/fileformat.html#varint
 
-    byte_count = 1
-    byte = stream.read(1)[0]
-    # Extract the 7 least s ignificant bits
-    value = byte & LAST_SEVEN_BITS_MASK
-    shift = 7
-
-    # Continue extracting the 7 least significant bits until the most significant bit is 0
-    while byte & IS_FIRST_BIT_ZERO_MASK:  #  0x80 is 10000000 in binary, checks the MSB
-        byte = stream.read(1)[0]
-        value |= (byte & 0x7F) << shift
-        shift += 7
+    value = 0
+    byte_count = 0
+    for c in range(9):
         byte_count += 1
+        value <<= 7 if c < 8 else 8
+
+        byte = stream.read(1)[0]
+        # Continue extracting the 7 least significant bits until the most significant bit is 0
+        value += byte & (LAST_SEVEN_BITS_MASK if c < 8 else 0b_1111_1111)
+        if (byte & 0b_1000_0000) == 0:
+            return value, byte_count
 
     return value, byte_count
 
 
-def read_record(stream: BinaryIO) -> List[any]:
+def read_record(stream: BinaryIO, row_id: int = None) -> List[any]:
     # Reference record format in https://saveriomiroddi.github.io/SQLIte-database-file-format-diagrams/
     header_size, num_header_bytes = read_varint(stream)
 
@@ -33,16 +36,43 @@ def read_record(stream: BinaryIO) -> List[any]:
         i += bytes_used
         serial_types.append(serial_type)
 
-    return [read_column_value(stream, serial_type) for serial_type in serial_types]
+    record_columns = [
+        read_column_value(stream, serial_type) for serial_type in serial_types
+    ]
+
+    # According to SQLite docs
+    # When an SQL table includes an INTEGER PRIMARY KEY column (which aliases the rowid)
+    # then that column appears in the record as a NULL value. SQLite will always use the
+    # table b-tree key rather than the NULL value when referencing the INTEGER PRIMARY KEY column.
+    if row_id:
+        record_columns[0] = row_id
+
+    return record_columns
 
 
 def read_column_value(stream, serial_type):
-    if (serial_type >= 13) and (serial_type % 2 == 1):
-        n_bytes = (serial_type - 13) // 2
-        return stream.read(n_bytes)
+    if serial_type == 0:
+        return None
     elif serial_type == 1:
         return int.from_bytes(stream.read(1), "big")
-    elif serial_type == 0:
-        return None
+    elif serial_type == 2:
+        return int.from_bytes(stream.read(2), "big")
+    elif serial_type == 3:
+        return int.from_bytes(stream.read(3), "big")
+    elif serial_type == 4:
+        return int.from_bytes(stream.read(4), "big")
+    elif serial_type == 5:
+        return int.from_bytes(stream.read(6), "big")
+    elif serial_type == 6:
+        return int.from_bytes(stream.read(), "big")
+    elif serial_type == 9:
+        return 1
+    elif (serial_type >= 13) and (serial_type % 2 == 1):
+        n_bytes = (serial_type - 13) // 2
+        return stream.read(n_bytes)
+    elif (serial_type >= 12) and (serial_type % 2 == 0):
+        n_bytes = (serial_type - 12) // 2
+        return stream.read(n_bytes)
+
     else:
         raise Exception(f"Unknown serial_type {serial_type}")
