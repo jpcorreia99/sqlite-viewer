@@ -1,4 +1,4 @@
-from app.consts import IS_FIRST_BIT_ZERO_MASK, LAST_SEVEN_BITS_MASK
+from app.consts import LAST_SEVEN_BITS_MASK
 from typing import BinaryIO, Tuple, List
 
 
@@ -24,7 +24,7 @@ def read_varint(stream: BinaryIO) -> Tuple[int, int]:
     return value, byte_count
 
 
-def read_record(stream: BinaryIO, row_id: int = None) -> List[any]:
+def read_table_record(stream: BinaryIO, row_id: int = None) -> List[any]:
     # Reference record format in https://saveriomiroddi.github.io/SQLIte-database-file-format-diagrams/
     header_size, num_header_bytes = read_varint(stream)
 
@@ -65,6 +65,8 @@ def read_column_value(stream, serial_type):
         return int.from_bytes(stream.read(6), "big")
     elif serial_type == 6:
         return int.from_bytes(stream.read(), "big")
+    elif serial_type == 8:
+        return 0
     elif serial_type == 9:
         return 1
     elif (serial_type >= 13) and (serial_type % 2 == 1):

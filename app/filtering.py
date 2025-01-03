@@ -4,12 +4,12 @@ import operator
 class ValueFilter:
     column: str
     operator: any  # some operation exported by the operator module
-    threshold: any
+    value: any
 
     def __init__(self, column: str, operator: str, threshold: any):
         self.column = column
         self.operator = ValueFilter._string_to_operator(operator)
-        self.threshold = threshold
+        self.value = threshold
 
     def __call__(self, row) -> bool:
         if self.column not in row:
@@ -22,14 +22,14 @@ class ValueFilter:
             return False
 
         value = value.decode("utf8")
-        if type(value) is not type(self.threshold):
+        if type(value) is not type(self.value):
             raise TypeError(
                 "Type of given value is not the same as threshold: ",
                 type(value),
-                type(self.threshold),
+                type(self.value),
             )
 
-        return self.operator(value.strip().lower(), self.threshold.strip().lower())
+        return self.operator(value.strip().lower(), self.value.strip().lower())
 
     @staticmethod
     def _string_to_operator(operator_str: str):

@@ -12,10 +12,9 @@ from sqlparse.sql import (
 )
 from sqlparse.tokens import Keyword, Wildcard, Whitespace
 
-from app.pages import Page, PageType
+from app.pages import Page, load_page_at_location
 from app.filtering import ValueFilter
 from app.rows import Schema
-from app.reading import page_start
 from app.consts import TABLE_CREATION_REGEX
 
 from typing import List, Optional, BinaryIO
@@ -112,14 +111,14 @@ class Query:
 
         return column_names
 
-    def execute(self, database_file: BinaryIO, first_page: Page, page_size: int):
-        sqlite_schema = first_page.read_sqlite_schema(database_file)
-
+    def execute(
+        self, database_file: BinaryIO, sqlite_schema: List[Schema], page_size: int
+    ):
         if self.query_components[1].lower() == "count(*)":
-            table_page = get_table_leaf_pages(
-                database_file, sqlite_schema, self.table_name, page_size
-            )[0]  # TODO: this is wrong
-            print(table_page.cell_count)
+            table_pages = get_table_leaf_pages(
+                database_file, sqlite_schema, self.table_name, None, page_size
+            )
+            print(sum([table_page.cell_count for table_page in table_pages]))
         else:
             self._execute_query(database_file, sqlite_schema, page_size)
 
@@ -132,8 +131,27 @@ class Query:
 
         creation_query = desired_table_schema.sql.split(b"\r")[0].decode("utf-8")
         schema = get_column_names_from_creation_query(creation_query)
+
+        rows = []
+        pages = []
+        """
+        if index_schema := get_index_on_column_if_exists(
+            self.table_name, sqlite_schema, self.value_filter
+        ):
+            row_ids = load_filter_compliant_row_ids_via_index(
+                database_file, index_schema, self.value_filter, page_size
+            )
+            print("rows!", row_ids)
+            # TODO: only load relevant pages
+
+        else:  # no index, have to read all pages
+            """
         pages = get_table_leaf_pages(
-            database_file, sqlite_schema, self.table_name, page_size
+            database_file,
+            sqlite_schema,
+            self.table_name,
+            self.value_filter,
+            page_size,
         )
 
         rows = [
@@ -168,6 +186,7 @@ def get_table_leaf_pages(
     database_file: BinaryIO,
     sqlite_schema: List[Schema],
     table_name: str,
+    value_filter: Optional[ValueFilter],
     page_size: int,
 ) -> List[Page]:
     """
@@ -177,23 +196,47 @@ def get_table_leaf_pages(
     Else, read the interior node representing the table and, for each pointer,
     collect the pointed page.
     """
-    desired_table_schema = next(
-        (schema for schema in sqlite_schema if schema.name == table_name), None
+
+    # If there's a WHERE clause, search if there's an index we should use
+    row_ids = None
+    if value_filter:
+        index_name = generate_index_name(table_name, value_filter.column)
+        index_schema = next(
+            (schema for schema in sqlite_schema if schema.table_name == index_name),
+            None,
+        )
+
+        if index_schema:
+            row_ids = load_filter_compliant_row_ids_via_index(
+                database_file, index_schema, value_filter, page_size
+            )
+
+    table_schema = next(
+        (schema for schema in sqlite_schema if schema.table_name == table_name),
+        None,
     )
 
-    desired_table_rootpage = desired_table_schema.rootpage - 1
-    desired_table_location = page_start(desired_table_rootpage, page_size)
+    desired_table_rootpage = table_schema.rootpage - 1
+    page = load_page_at_location(database_file, desired_table_rootpage, page_size)
 
-    desired_table_location = page_start(desired_table_rootpage, page_size)
-    database_file.seek(desired_table_location)
-    page_bytes = bytearray(database_file.read(page_size))
+    return page.load_table_leaf_pages(database_file, page_size, row_ids)
 
-    page = Page.from_bytes(page_bytes, desired_table_location)
 
-    if page.page_type == PageType.INTERIOR_TABLE:
-        return page.load_pointed_table_leaf_pages(database_file, page_size)
-    else:
-        return [page]
+def load_filter_compliant_row_ids_via_index(
+    database_file: BinaryIO,
+    index_schema: Schema,
+    value_filter: ValueFilter,
+    page_size: int,
+) -> List[int]:
+    """
+    Given an index and a value filter representing a WHERE condition,
+    return row IDs for payloads satisfying the condition.
+    """
+    desired_table_rootpage = index_schema.rootpage - 1
+
+    page = load_page_at_location(database_file, desired_table_rootpage, page_size)
+
+    return page.load_filter_compliant_row_ids(database_file, value_filter, page_size)
 
 
 def get_column_names_from_creation_query(sql_creation_query: str) -> List[str]:
@@ -208,11 +251,67 @@ def get_column_names_from_creation_query(sql_creation_query: str) -> List[str]:
     )'''
 
     We must extract the inner tokens form the last token to access the names
+
+    SQLparse is not well fit for parsing the creation query. As such,
+    we opt for a more manual choice of regex matching the column description and
+    stripping all sqlite keywords to just keep the column names
+    """
+    reserved_sqlite_keywords = [
+        "autoincrement",
+        "primary key",
+        "not null",
+        "text",
+        "integer",
+        ",",
+    ]
+
+    sql_creation_query = sql_creation_query.replace("\n", "")
+    sql_creation_query = sql_creation_query.replace("\t", "")
+
+    # find the content inside parenthesis
+    match = re.search(TABLE_CREATION_REGEX, sql_creation_query)
+    if match:
+        sql_creation_query = match.group(1)
+    else:
+        raise ValueError(
+            "Could not regex match sql creation query.", sql_creation_query
+        )
+
+    for keyword in reserved_sqlite_keywords:
+        sql_creation_query = sql_creation_query.replace(keyword, "")
+
+    sql_creation_query = re.sub(r"\s+", " ", sql_creation_query).strip()
+
+    # return all words or quoted strings
+    return re.findall(r'"[^"]*"|\S+', sql_creation_query)
+
+
+def get_column_names_from_creation_query_old(sql_creation_query: str) -> List[str]:
+    """
+    Creation query will look like
+
+    b'''CREATE TABLE apples
+    (
+        id integer primary key autoincrement,
+        name text,
+        color text
+    )'''
+
+    We must extract the inner tokens form the last token to access the names
     """
 
+    print("Creation query!", sql_creation_query)
     # Extract everything before and during the first parenthesis match
-    match = re.search(TABLE_CREATION_REGEX, sql_creation_query)
+    sql_creation_query = sql_creation_query.replace("\n", "")
+    sql_creation_query = sql_creation_query.replace("\t", "")
 
+    reserved_sqlite_keywords = ["autoincrement", "primary key", "not null", "text"]
+    for keyword in reserved_sqlite_keywords:
+        sql_creation_query = sql_creation_query.replace(keyword, "")
+
+    sql_creation_query = re.sub(r"\s+", " ", sql_creation_query)
+    print("Creation query!", sql_creation_query)
+    match = re.search(TABLE_CREATION_REGEX, sql_creation_query)
     if match:
         sql_creation_query = match.group(1)
     else:
@@ -222,11 +321,11 @@ def get_column_names_from_creation_query(sql_creation_query: str) -> List[str]:
 
     parsed_creation_query = sqlparse.parse(sql_creation_query)[0]
 
-    reserved_sqlite_keywords = ["autoincrement", "primary key", "not null"]
     column_names = []
     for token in parsed_creation_query.tokens:
         if isinstance(token, Parenthesis):  #
             for subtoken in token.tokens:
+                print(subtoken, type(subtoken))
                 if isinstance(subtoken, Identifier):
                     column_names.append(subtoken.get_name())
                 if isinstance(subtoken, IdentifierList):
@@ -241,3 +340,19 @@ def get_column_names_from_creation_query(sql_creation_query: str) -> List[str]:
             break  # no need to iterate more
 
     return column_names
+
+
+def generate_index_name(table_name: str, column_name: str) -> str:
+    return f"idx_{table_name}_{column_name}"
+
+
+def get_index_on_column_if_exists(
+    table_name: str, sqlite_schema: List[Schema], value_filter: ValueFilter
+) -> Optional[Schema]:
+    if value_filter:
+        index_name = generate_index_name(table_name, value_filter.column)
+
+        return next(
+            (schema for schema in sqlite_schema if schema.table_name == index_name),
+            None,
+        )
