@@ -16,9 +16,6 @@ We add a 1 to signify mnore chunks to come and 0 for the final
 
 > 10000111 01101000
 
-### Integer packing
-
-Integers that can fit in an 8-bit integer are represented with a type value of 0x01. 16-bit integers are 0x02, 24-bit integers are 0x03 and so on.
 
 ### SQLite row representation
 
@@ -151,7 +148,7 @@ After this, pages of default size 4096 bytes
 
 ### Page type
 
-+age type to first byte:
+Page type to first byte:
 - table b-tree interior page **0x05**
 - table b-tree leaf page **0x0d**
 - index b-tree interior page **0x02**

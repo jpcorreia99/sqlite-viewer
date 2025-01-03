@@ -272,62 +272,6 @@ def get_column_names_from_creation_query(sql_creation_query: str) -> List[str]:
     return re.findall(r'"[^"]*"|\S+', sql_creation_query)
 
 
-def get_column_names_from_creation_query_old(sql_creation_query: str) -> List[str]:
-    """
-    Creation query will look like
-
-    b'''CREATE TABLE apples
-    (
-        id integer primary key autoincrement,
-        name text,
-        color text
-    )'''
-
-    We must extract the inner tokens form the last token to access the names
-    """
-
-    print("Creation query!", sql_creation_query)
-    # Extract everything before and during the first parenthesis match
-    sql_creation_query = sql_creation_query.replace("\n", "")
-    sql_creation_query = sql_creation_query.replace("\t", "")
-
-    reserved_sqlite_keywords = ["autoincrement", "primary key", "not null", "text"]
-    for keyword in reserved_sqlite_keywords:
-        sql_creation_query = sql_creation_query.replace(keyword, "")
-
-    sql_creation_query = re.sub(r"\s+", " ", sql_creation_query)
-    print("Creation query!", sql_creation_query)
-    match = re.search(TABLE_CREATION_REGEX, sql_creation_query)
-    if match:
-        sql_creation_query = match.group(1)
-    else:
-        raise ValueError(
-            "Could not regex match sql creation query.", sql_creation_query
-        )
-
-    parsed_creation_query = sqlparse.parse(sql_creation_query)[0]
-
-    column_names = []
-    for token in parsed_creation_query.tokens:
-        if isinstance(token, Parenthesis):  #
-            for subtoken in token.tokens:
-                print(subtoken, type(subtoken))
-                if isinstance(subtoken, Identifier):
-                    column_names.append(subtoken.get_name())
-                if isinstance(subtoken, IdentifierList):
-                    for identifier in subtoken.get_identifiers():
-                        # bug: SQLParse seems to always think modifier keywords are identifiers :(
-                        if identifier.value.lower() not in reserved_sqlite_keywords:
-                            try:
-                                column_names.append(identifier.get_name())
-                            except AttributeError:
-                                raise TypeError("The token that failed is", identifier)
-
-            break  # no need to iterate more
-
-    return column_names
-
-
 def generate_index_name(table_name: str, column_name: str) -> str:
     return f"idx_{table_name}_{column_name}"
 

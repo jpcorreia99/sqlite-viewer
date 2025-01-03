@@ -1,78 +1,94 @@
-#  pipenv install to setup the repo
-
+#  SQLite viewer
 [![progress-banner](https://backend.codecrafters.io/progress/sqlite/daa83443-036c-4926-9f5c-0cbeefcf0fc9)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-This is a starting point for Python solutions to the
-["Build Your Own SQLite" Challenge](https://codecrafters.io/challenges/sqlite).
+# Contents
+   - What?
+   - Usage
+   - Coding Setup
+   - Understanding SQLite
 
-In this challenge, you'll build a barebones SQLite implementation that supports
-basic SQL queries like `SELECT`. Along the way we'll learn about
-[SQLite's file format](https://www.sqlite.org/fileformat.html), how indexed data
-is
-[stored in B-trees](https://jvns.ca/blog/2014/10/02/how-does-sqlite-work-part-2-btrees/)
-and more.
+## What?
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+Full implementation of the codecrafters ["Build Your Own SQLite" Challenge](https://codecrafters.io/challenges/sqlite).
 
-# Passing the first stage
+This challenge consists of building program capable of interpreting the SQLite file format and answering basic queries.
 
-The entry point for your SQLite implementation is in `app/main.py`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+I highly recommend codecrafters as a way to deepend system's knowledge and practice coding in a non-surface level context. 
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
-```
+##  Usage
 
-Time to move on to the next stage!
+The `sqlite_viewer.sh` script supports multiple commands:
 
-# Stage 2 & beyond
+-  `./sqlite_viewer.sh <path_to_db> ".dbinfo"`
+   -  Returns basic info about the db, such as page size and number of tables
+-  `./sqlite_viewer.sh <path_to_db> ".tables"`
+   -  Returns the name of the existing db tables
+-  `./sqlite_viewer.sh <path_to_db> <QUERY>`
+   -  Executes the query and prints the returned rows
 
-Note: This section is for stages 2 and beyond.
+### Supported queries
+**NOTE**: As the program depends on external libraries, please run `pipenv install`to setup.
 
-1. Ensure you have `python (3.8+)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.py`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
 
-# Sample Databases
+As the name implies, this program only supports **READ** queries.
 
-To make it easy to test queries locally, we've added a sample database in the
-root of this repository: `sample.db`.
+This repository includes some sample databases in `databases/` for exploration.
 
-This contains two tables: `apples` & `oranges`. You can use this to test your
-implementation for the first 6 stages.
+List of types of supported queries and examples:
 
-You can explore this database by running queries against it like this:
+- **Total Count queries**
+  - `./sqlite_viewer.sh databases/sample.db "SELECT COUNT(*) FROM apples"`
+- **Column selection with filtering spanning multiple pages**
+   - `./sqlite_viewer.sh databases/superheroes.db "SELECT id, name FROM superheroes WHERE eye_color = 'Pink Eyes'"`
+ - **Column selection relying on indices**
+   - `./sqlite_viewer.sh databases/companies.db "SELECT id, name FROM companies WHERE country = 'eritrea'"`
+   - This query is extra performant due to the existence of an `idx_companies_country`index
 
-```sh
-$ sqlite3 sample.db "select id, name from apples"
-1|Granny Smith
-2|Fuji
-3|Honeycrisp
-4|Golden Delicious
-```
+## Understanding SQLite
+There are plenty of very good resources to understand the SQLite file format:
 
-There are two other databases that you can use:
+- SQLite file format: https://www.sqlite.org/fileformat2.html
+- Diagram on page structure: https://saveriomiroddi.github.io/SQLIte-database-file-format-diagrams/#table-interior-page
+- Page structure interactive viz: https://torymur.github.io/sqlite-repr/
+- Great blog post explainign B+Trees in SQLite https://fly.io/blog/sqlite-internals-btree/
 
-1. `superheroes.db`:
-   - This is a small version of the test database used in the table-scan stage.
-   - It contains one table: `superheroes`.
-   - It is ~1MB in size.
-1. `companies.db`:
-   - This is a small version of the test database used in the index-scan stage.
-   - It contains one table: `companies`, and one index: `idx_companies_country`
-   - It is ~7MB in size.
+**Note**: *Node* and *Page* are used interchangeably.
 
-These aren't included in the repository because they're large in size. You can
-download them by running this script:
+I wrote some detailed ramblings in `docs/notes.md`, but here's the super short TLDR:
 
-```sh
-./download_sample_databases.sh
-```
+- SQLite stores tables and indices as **B+Trees**.These trees contain **interior** and **leaf** nodes.
 
-If the script doesn't work for some reason, you can download the databases
-directly from
-[codecrafters-io/sample-sqlite-databases](https://github.com/codecrafters-io/sample-sqlite-databases).
+- So in total we have
+  - **Table Interior nodes**
+    - When a table span multiple nodes, these nodes point to which leaf nodes contain rows with different Row_Ids 
+  - **Table Leaf nodes**
+    - Store rows of the tables
+  - **Index Interior nodes**
+    - When indices span multiple nodes, points to which nodes are reponsible for each section of the keyspace
+  - **Index Leaf nodes**
+    - For a section of the keyspace, point which row_ids satisfy the index
+  
+  Pretty much all pages follow the same structure, whith slight variations:
+  - **Page header**: an 8-12 bytes long sequence that indicates the page type, and how many cells (rows or pointer) are in this page
+  - **Cell pointer array**: an array of 2-byte cells pointing to where to search, inside of the page, for the payload
+  - **Payload array**: a variable size array of payloads. In table leaf cells these are rows, everywhere else these are pairs of values + pointers to help navigate the tree/index. 
+
+An interesting detail of SQLite is the usage of **varints**
+
+### Varints 
+(Taken from https://fly.io/blog/sqlite-internals-btree/)
+
+This encoding is used so that we don’t use a huge 8-byte field for every integer.
+
+The high bit is used as a flag to indicate if there are more bytes to be read and the other 7 bits are our actual data.
+
+To represent 1,000, we start with its binary representation split into 7 bit chunks:
+
+> 0000111 1101000
+
+We add a 1 to signify mnore chunks to come and 0 for the final
+
+> 10000111 01101000
+
+SQLite goes even further and uses this type to encode not only integers but data types, as per https://www.sqlite.org/fileformat2.html#record_format
+

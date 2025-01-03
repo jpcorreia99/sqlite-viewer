@@ -323,12 +323,9 @@ class Page:
 
             _payload_bytes_size = read_varint(database_file)
             record = read_table_record(database_file)
-            # print(cell_pointer, self.page_type, record)
             value = record[0]
             if isinstance(value, bytes):
                 value = value.decode("utf-8")
-            #  print("!", record, self.page_type)
-            #     else:
 
             records.append(IndexRecord(value, record[1], left_child_pointer))
 
