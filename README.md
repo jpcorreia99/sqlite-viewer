@@ -2,12 +2,12 @@
 [![progress-banner](https://backend.codecrafters.io/progress/sqlite/daa83443-036c-4926-9f5c-0cbeefcf0fc9)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
 # Contents
-   - What?
-   - Usage
-   - Coding Setup
-   - Understanding SQLite
+   - **[What?](#what)**
+   - **[Usage](#usage)**
+     - **[Supported Queries](#supported-queries)**
+   - **[Understanding SQLite](#understanding-sqlite)**
 
-## What?
+# What?
 
 Full implementation of the codecrafters ["Build Your Own SQLite" Challenge](https://codecrafters.io/challenges/sqlite).
 
@@ -15,15 +15,15 @@ This challenge consists of building program capable of interpreting the SQLite f
 
 I highly recommend codecrafters as a way to deepend system's knowledge and practice coding in a non-surface level context. 
 
-##  Usage
+# Usage
 
 The `sqlite_viewer.sh` script supports multiple commands:
 
--  `./sqlite_viewer.sh <path_to_db> ".dbinfo"`
+-  **`./sqlite_viewer.sh <path_to_db> ".dbinfo"`**
    -  Returns basic info about the db, such as page size and number of tables
--  `./sqlite_viewer.sh <path_to_db> ".tables"`
+-  **`./sqlite_viewer.sh <path_to_db> ".tables"`**
    -  Returns the name of the existing db tables
--  `./sqlite_viewer.sh <path_to_db> <QUERY>`
+-  **`./sqlite_viewer.sh <path_to_db> <QUERY>`**
    -  Executes the query and prints the returned rows
 
 ### Supported queries
