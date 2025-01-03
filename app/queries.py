@@ -132,20 +132,6 @@ class Query:
         creation_query = desired_table_schema.sql.split(b"\r")[0].decode("utf-8")
         schema = get_column_names_from_creation_query(creation_query)
 
-        rows = []
-        pages = []
-        """
-        if index_schema := get_index_on_column_if_exists(
-            self.table_name, sqlite_schema, self.value_filter
-        ):
-            row_ids = load_filter_compliant_row_ids_via_index(
-                database_file, index_schema, self.value_filter, page_size
-            )
-            print("rows!", row_ids)
-            # TODO: only load relevant pages
-
-        else:  # no index, have to read all pages
-            """
         pages = get_table_leaf_pages(
             database_file,
             sqlite_schema,

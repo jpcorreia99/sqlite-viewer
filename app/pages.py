@@ -62,8 +62,6 @@ class PageType(Enum):
     LEAF_TABLE = 0x0D
 
 
-# representation of the page (header + cells) declared in
-# https://www.sqlite.org/fileformat.html#b_tree_pages
 class Page:
     start: int
     page_type: PageType
@@ -73,56 +71,21 @@ class Page:
     right_most_pointer: Optional[int]  # Only present in inner page headers
 
     @staticmethod
-    def from_bytes(
-        bytes_content: bytearray, start: int, is_first_page: bool = False
-    ) -> Page:
-        instance = Page()
-        instance.start = start
-
-        if is_first_page:
-            bytes_content = bytes_content[DB_FILE_HEADER_SIZE:]
-
-        page_type_byte = bytes_content[0]
-        try:
-            instance.page_type = PageType(page_type_byte)
-        except ValueError:
-            raise ValueError(f"Invalid page type: {page_type_byte:#02x}")
-
-        instance.cell_count = int.from_bytes(bytes_content[3:5], "big")
-
-        if (
-            instance.page_type == PageType.INTERIOR_INDEX
-            or instance.page_type == PageType.INTERIOR_TABLE
-        ):
-            instance.right_most_pointer = int.from_bytes(bytes_content[8:12], "big")
-        else:
-            instance.right_most_pointer = None
-
-        post_header_bytes = []
-        if (
-            instance.page_type == PageType.LEAF_INDEX
-            or instance.page_type == PageType.LEAF_TABLE
-        ):
-            post_header_bytes = bytes_content[LEAF_PAGE_HEADER_SIZE:]
-        else:
-            post_header_bytes = bytes_content[INTERIOR_PAGE_HEADER_SIZE:]
-
-        instance.cell_pointer_array = Page.__read_cell_pointers(
-            post_header_bytes, instance.cell_count
-        )
-
-        return instance
-
-    @staticmethod
     def from_file(
         database_file: BinaryIO, start: int, is_first_page: bool = False
     ) -> Page:
+        """
+        Loads the database page from located at the "start" offset.
+        Parses the page header as described in https://www.sqlite.org/fileformat2.html#b_tree_pages
+        and, based on that, loads the cell pointer array
+        """
         instance = Page()
         instance.start = start
 
         database_file.seek(start)
         real_start = start
 
+        # For the first page, we must skip the 100 byte database header
         if is_first_page:
             database_file.seek(DB_FILE_HEADER_SIZE)
             real_start = DB_FILE_HEADER_SIZE
@@ -281,19 +244,9 @@ class Page:
             # binary search now
             # if first value in node is > than our value, fallback to first left pointer
             # else, search for any match and follow those nodes
+            #   NOTE: a match can be an equality or our value falling between the values of two records
             # else, traverse to the right_most pointer
             page_indices_to_query = []
-            """
-            if index_records[0].value > value_filter.value:
-                page_indices_to_query = [index_records[0].left_pointer]
-            elif index_records[-1].value < value_filter.value:
-                page_indices_to_query = [self.right_most_pointer]
-            else:
-                for record in index_records:
-                    if record.value == value_filter.value:
-                        row_ids.append(record.row_id)
-                        page_indices_to_query.append(record.left_pointer)
-            """
             for i, record in enumerate(index_records):
                 if record.value == value_filter.value:
                     row_ids.append(record.row_id)
@@ -325,12 +278,6 @@ class Page:
         return list(dict.fromkeys(row_ids))
 
     #  The cell pointer array consists of K 2-byte integer offsets to the cell contents.
-    @staticmethod
-    def __read_cell_pointers(bytes: bytearray, cell_count: int) -> List[int]:
-        return [
-            int.from_bytes(bytes[i * 2 : i * 2 + 2], "big") for i in range(cell_count)
-        ]
-
     @staticmethod
     def __read_cell_pointers_from_file(
         database_file: BinaryIO, cell_count: int
